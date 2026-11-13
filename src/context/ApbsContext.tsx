@@ -10,6 +10,8 @@ import {
   checkRedirectAuthResult,
   parseFirebaseAuthError,
   ParsedAuthError,
+  DomainNotAllowedError,
+  isAllowedSchoolEmail,
   logout as googleLogout,
   clearAccessToken,
 } from '../services/googleAuth';
@@ -74,6 +76,7 @@ interface ApbsContextType {
   nearLimitItems: ApbsBudgetItem[];
   // Actions
   addTransaction: (tx: Omit<ExpenseTransaction, 'id' | 'createdAt'>) => void;
+  addBatchTransactions: (txList: Omit<ExpenseTransaction, 'id' | 'createdAt'>[]) => void;
   updateTransaction: (id: string, updated: Partial<ExpenseTransaction>) => void;
   deleteTransaction: (id: string, alsoSyncSheets?: boolean) => Promise<void>;
   updateCell: (itemId: string, monthIndex: number, type: 'budget' | 'actual', value: number) => void;
@@ -86,6 +89,7 @@ interface ApbsContextType {
   // Google Sheets & Auth
   googleUser: User | null;
   needsAuth: boolean;
+  isCheckingAuth: boolean;
   isLoggingIn: boolean;
   isSheetsConnected: boolean;
   spreadsheetInfo: SpreadsheetInfo | null;
@@ -169,6 +173,7 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [googleUser, setGoogleUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [needsAuth, setNeedsAuth] = useState<boolean>(true);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
 
   const [spreadsheetInfo, setSpreadsheetInfo] = useState<SpreadsheetInfo | null>(null);
@@ -187,14 +192,25 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     const unsub = initAuth(
       (user, token) => {
+        if (!isAllowedSchoolEmail(user.email)) {
+          setGoogleUser(null);
+          setAccessToken(null);
+          setNeedsAuth(true);
+          return;
+        }
         setGoogleUser(user);
         setAccessToken(token);
         setNeedsAuth(false);
       },
-      (user) => {
+      (user, rejectedEmail) => {
         setGoogleUser(user);
         setAccessToken(null);
         setNeedsAuth(true);
+        if (rejectedEmail) {
+          const parsed = parseFirebaseAuthError(new DomainNotAllowedError(rejectedEmail));
+          setAuthErrorInfo(parsed);
+          setSyncError(parsed.message);
+        }
       }
     );
 
@@ -215,6 +231,10 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const parsed = parseFirebaseAuthError(err);
           setAuthErrorInfo(parsed);
           setSyncError(parsed.message);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingAuth(false);
         }
       }
     })();
@@ -706,6 +726,101 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Add multiple line items from a single Pengajuan Dana form
+  const addBatchTransactions = (txDataList: Omit<ExpenseTransaction, 'id' | 'createdAt'>[]) => {
+    if (txDataList.length === 0) return;
+    if (txDataList.length === 1) {
+      addTransaction(txDataList[0]);
+      return;
+    }
+
+    const baseTime = Date.now();
+    const newTxs: ExpenseTransaction[] = txDataList.map((txData, idx) => ({
+      ...txData,
+      id: `tx-${baseTime}-${idx}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+    }));
+
+    const applyBatchLocally = (): { nextItems: ApbsBudgetItem[]; nextTransactions: ExpenseTransaction[] } => {
+      const nextTransactions = [...newTxs, ...transactions];
+      const nextItems = items.map((item) => {
+        const matching = newTxs.filter((t) => t.itemId === item.id);
+        if (matching.length === 0) return item;
+        const newActual = [...item.monthlyActual];
+        matching.forEach((t) => {
+          newActual[t.monthIndex] = (newActual[t.monthIndex] || 0) + t.amount;
+        });
+        return {
+          ...item,
+          monthlyActual: newActual,
+          totalActual: newActual.reduce((a, b) => a + b, 0),
+        };
+      });
+      setTransactions(nextTransactions);
+      setItems(nextItems);
+      return { nextItems, nextTransactions };
+    };
+
+    const totalBatchAmount = newTxs.reduce((s, t) => s + t.amount, 0);
+    const refNo = newTxs[0]?.formMeta?.referenceNo || newTxs[0]?.invoiceNo || '-';
+
+    if (isSheetsConnected && accessToken && spreadsheetInfo) {
+      const nextTransactions = [...newTxs, ...transactions];
+      const nextItems = items.map((item) => {
+        const matching = newTxs.filter((t) => t.itemId === item.id);
+        if (matching.length === 0) return item;
+        const newActual = [...item.monthlyActual];
+        matching.forEach((t) => {
+          newActual[t.monthIndex] = (newActual[t.monthIndex] || 0) + t.amount;
+        });
+        return {
+          ...item,
+          monthlyActual: newActual,
+          totalActual: newActual.reduce((a, b) => a + b, 0),
+        };
+      });
+
+      setPendingSheetConfirm({
+        id: `tx-batch-${baseTime}`,
+        actionType: 'record_tx',
+        title: 'Simpan Formulir Pengajuan Dana & Update Sheets?',
+        description:
+          'Formulir pengajuan dana berisi beberapa rincian pos #APBS. Semua pos akan memotong pagu dan langsung disinkronkan ke Google Sheets.',
+        targetSpreadsheetName: spreadsheetInfo.title,
+        details: [
+          { label: 'No. Referensi', value: refNo },
+          { label: 'Jumlah Baris #APBS', value: `${newTxs.length} pos anggaran` },
+          { label: 'Total Pengajuan', value: formatRupiah(totalBatchAmount) },
+          { label: 'Operasi Sheets', value: 'Update APBS_Master & Transaksi_Pengeluaran' },
+        ],
+        confirmLabel: 'Ya, Simpan & Update Google Sheets',
+        localOnlyLabel: 'Simpan Lokal Saja',
+        onLocalOnly: () => {
+          applyBatchLocally();
+          setSyncNotice('Formulir pengajuan dana disimpan secara lokal.');
+        },
+        onConfirm: async () => {
+          setIsSyncing(true);
+          setSyncError(null);
+          try {
+            await overwriteAllToSheets(accessToken, spreadsheetInfo, nextItems, nextTransactions);
+            setItems(nextItems);
+            setTransactions(nextTransactions);
+            setLastSyncedAt(new Date().toISOString());
+            setSyncNotice(`Formulir ${refNo} (${newTxs.length} pos) tersimpan & tersinkron ke Google Sheets!`);
+          } catch (err) {
+            handleSheetsError(err);
+            throw err;
+          } finally {
+            setIsSyncing(false);
+          }
+        },
+      });
+    } else {
+      applyBatchLocally();
+    }
+  };
+
   const updateTransaction = (id: string, updated: Partial<ExpenseTransaction>) => {
     const oldTx = transactions.find((t) => t.id === id);
     if (!oldTx) return;
@@ -995,6 +1110,7 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         overBudgetItems,
         nearLimitItems,
         addTransaction,
+        addBatchTransactions,
         updateTransaction,
         deleteTransaction,
         updateCell,
@@ -1006,6 +1122,7 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         importDataJson,
         googleUser,
         needsAuth,
+        isCheckingAuth,
         isLoggingIn,
         isSheetsConnected,
         spreadsheetInfo,

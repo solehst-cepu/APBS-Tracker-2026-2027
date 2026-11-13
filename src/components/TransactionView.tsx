@@ -2,19 +2,20 @@ import React, { useState, useMemo } from 'react';
 import { useApbs } from '../context/ApbsContext';
 import { ExpenseTransaction } from '../types/apbs';
 import { formatRupiah, formatDateIndo, MONTH_NAMES } from '../utils/formatters';
+import { PengajuanDanaPreviewModal } from './PengajuanDanaPreviewModal';
+import {
+  buildDocumentFromTransactions,
+  exportPengajuanDanaToPdf,
+} from '../utils/pengajuanDanaPdf';
 import {
   Search,
-  Filter,
   PlusCircle,
   Trash2,
-  Edit2,
   Download,
   Receipt,
   Printer,
-  Calendar,
   X,
-  CreditCard,
-  Building
+  FileDown,
 } from 'lucide-react';
 
 interface TransactionViewProps {
@@ -26,7 +27,7 @@ export const TransactionView: React.FC<TransactionViewProps> = ({
   onOpenRecordModal,
   onEditTransaction,
 }) => {
-  const { transactions, categories, units, deleteTransaction, isSheetsConnected, spreadsheetInfo } = useApbs();
+  const { items, transactions, categories, units, deleteTransaction, isSheetsConnected, spreadsheetInfo } = useApbs();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
@@ -332,15 +333,32 @@ export const TransactionView: React.FC<TransactionViewProps> = ({
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => setSelectedTxForReceipt(tx)}
-                          className="p-1 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100"
-                          title="Lihat / Cetak Bukti Kuitansi Pengeluaran"
+                          className="p-1.5 text-slate-600 hover:text-slate-900 rounded hover:bg-slate-100"
+                          title="Pratinjau & Cetak Lembaran Pengajuan Dana"
                         >
                           <Printer className="w-3.5 h-3.5" />
                         </button>
 
                         <button
+                          onClick={() => {
+                            const docData = buildDocumentFromTransactions(
+                              tx,
+                              transactions,
+                              items,
+                              true
+                            );
+                            exportPengajuanDanaToPdf(docData);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded transition-colors"
+                          title="Export Lembaran Pengajuan Dana ke PDF"
+                        >
+                          <FileDown className="w-3.5 h-3.5" />
+                          <span>PDF</span>
+                        </button>
+
+                        <button
                           onClick={() => setDeletingId(tx.id)}
-                          className="p-1 text-rose-500 hover:text-rose-700 rounded hover:bg-rose-50"
+                          className="p-1.5 text-rose-500 hover:text-rose-700 rounded hover:bg-rose-50"
                           title="Hapus Transaksi"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -396,81 +414,13 @@ export const TransactionView: React.FC<TransactionViewProps> = ({
         </div>
       )}
 
-      {/* Receipt Voucher Preview Modal */}
-      {selectedTxForReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-200 text-slate-900">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <Building className="w-4 h-4 text-emerald-600" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                  Bukti Pengeluaran Kas (Kuitansi GA)
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedTxForReceipt(null)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="my-4 p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-2.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Nomor Bukti:</span>
-                <span className="font-mono font-bold text-slate-900">{selectedTxForReceipt.invoiceNo || 'GA-VOUCHER'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Tanggal:</span>
-                <span>{formatDateIndo(selectedTxForReceipt.date)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Mata Anggaran:</span>
-                <span className="font-semibold text-right max-w-[200px]">{selectedTxForReceipt.itemName}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Pos Kode #APBS:</span>
-                <span className="font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded text-[11px] border border-emerald-300">
-                  #{selectedTxForReceipt.itemId}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Kategori / Unit:</span>
-                <span>{selectedTxForReceipt.category} · {selectedTxForReceipt.unit}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Pemohon / PIC:</span>
-                <span className="font-medium">{selectedTxForReceipt.pic}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Metode Bayar:</span>
-                <span>{selectedTxForReceipt.paymentMethod || 'Kas GA'}</span>
-              </div>
-              <div className="pt-2 border-t border-slate-200">
-                <span className="text-slate-500 block mb-0.5">Uraian / Keterangan:</span>
-                <p className="text-slate-700 italic">{selectedTxForReceipt.description || '-'}</p>
-              </div>
-              <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
-                <span className="font-semibold text-slate-800">Jumlah Dibayarkan:</span>
-                <span className="text-base font-bold font-mono text-emerald-700">
-                  {formatRupiah(selectedTxForReceipt.amount)}
-                </span>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-200 flex items-center justify-between text-xs">
-              <span className="text-slate-400 text-[11px]">LAZUARDI GCS CINERE · TA 2026-2027</span>
-              <button
-                onClick={() => window.print()}
-                className="px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 flex items-center gap-1.5"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Cetak Bukti</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Lembaran Pengajuan Dana Preview & PDF Export Modal */}
+      <PengajuanDanaPreviewModal
+        transaction={selectedTxForReceipt}
+        allTransactions={transactions}
+        items={items}
+        onClose={() => setSelectedTxForReceipt(null)}
+      />
     </div>
   );
 };

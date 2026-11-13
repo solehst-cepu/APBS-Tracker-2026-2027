@@ -99,3 +99,14 @@ body {
   background-color: #303030;
   opacity: 0.08;
 }
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+  body {
+    background-color: #ffffff !important;
+  }
+}
+

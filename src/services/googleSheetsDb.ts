@@ -188,6 +188,7 @@ function buildTransactionRows(transactions: ExpenseTransaction[]): (string | num
     'Metode_Bayar',
     'Keterangan',
     'Waktu_Catat',
+    'Form_Meta_JSON',
   ];
 
   const rows = transactions.map((tx) => [
@@ -208,6 +209,7 @@ function buildTransactionRows(transactions: ExpenseTransaction[]): (string | num
     tx.paymentMethod || 'Kas GA',
     tx.description || '',
     tx.createdAt,
+    tx.formMeta ? JSON.stringify(tx.formMeta) : '',
   ]);
 
   return [header, ...rows];
@@ -537,7 +539,7 @@ export async function overwriteAllToSheets(
     {
       method: 'POST',
       body: JSON.stringify({
-        ranges: [`'${masterSheet}'!A:AK`, `'${txSheet}'!A:Q`, `'${dashSheet}'!A:E`],
+        ranges: [`'${masterSheet}'!A:AK`, `'${txSheet}'!A:R`, `'${dashSheet}'!A:E`],
       }),
     }
   );
@@ -580,7 +582,7 @@ export async function readDatabaseFromSheets(
   }
 
   const ranges = [`'${masterSheet}'!A1:AK1000`];
-  if (txSheet) ranges.push(`'${txSheet}'!A1:Q5000`);
+  if (txSheet) ranges.push(`'${txSheet}'!A1:R5000`);
 
   const params = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join('&');
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${freshMeta.spreadsheetId}/values:batchGet?${params}&valueRenderOption=UNFORMATTED_VALUE`;
@@ -631,6 +633,15 @@ export async function readDatabaseFromSheets(
     if (!row || !row[0]) continue;
     const pm = String(row[14] || 'Kas GA') as ExpenseTransaction['paymentMethod'];
 
+    let parsedFormMeta: ExpenseTransaction['formMeta'] = undefined;
+    if (row[17]) {
+      try {
+        parsedFormMeta = JSON.parse(String(row[17]));
+      } catch {
+        parsedFormMeta = undefined;
+      }
+    }
+
     transactions.push({
       id: String(row[0]).trim(),
       itemId: String(row[1] || '').trim(),
@@ -649,6 +660,7 @@ export async function readDatabaseFromSheets(
         ? pm
         : 'Kas GA',
       description: String(row[15] || '').trim(),
+      formMeta: parsedFormMeta,
       createdAt: String(row[16] || new Date().toISOString()),
     });
   }
@@ -759,6 +771,7 @@ export async function syncSingleItemAndAppendTransaction(
     newTx.paymentMethod || 'Kas GA',
     newTx.description || '',
     newTx.createdAt,
+    newTx.formMeta ? JSON.stringify(newTx.formMeta) : '',
   ];
 
   await fetchGoogleApi(

@@ -8,22 +8,22 @@ import { ReportsView } from './components/ReportsView';
 import { RecordExpenseModal } from './components/RecordExpenseModal';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { GoogleSheetsConfirmModal } from './components/GoogleSheetsConfirmModal';
-import { GoogleSignInButton } from './components/GoogleSignInButton';
+import { LoginGate } from './components/LoginGate';
 import { AuthErrorAlert } from './components/AuthErrorAlert';
+import { isAllowedSchoolEmail } from './services/googleAuth';
 import { ViewTab } from './types/apbs';
-import { CheckCircle2, X, FileSpreadsheet, ExternalLink } from 'lucide-react';
+import { CheckCircle2, X, ExternalLink } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<ViewTab>('dashboard');
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
   const [selectedItemIdForModal, setSelectedItemIdForModal] = useState<string | undefined>(undefined);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | undefined>(undefined);
-  const [dismissedAuthBanner, setDismissedAuthBanner] = useState(false);
 
   const {
+    googleUser,
     needsAuth,
     isLoggingIn,
-    handleGoogleLogin,
     handleGoogleLoginRedirect,
     isSheetsConnected,
     spreadsheetInfo,
@@ -34,6 +34,10 @@ const AppContent: React.FC = () => {
     clearSyncNotice,
     setIsSheetsModalOpen,
   } = useApbs();
+
+  if (needsAuth || !googleUser || !isAllowedSchoolEmail(googleUser.email)) {
+    return <LoginGate />;
+  }
 
   const handleOpenRecordModal = (itemId?: string) => {
     setSelectedItemIdForModal(itemId);
@@ -92,43 +96,6 @@ const AppContent: React.FC = () => {
             >
               <X className="w-4 h-4" />
             </button>
-          </div>
-        )}
-
-        {/* Google Sheets Auto-Connect Banner (shown when signed out / needsAuth) */}
-        {needsAuth && !dismissedAuthBanner && (
-          <div className="p-4 bg-white border border-slate-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
-                <FileSpreadsheet className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Sambungkan Database Google Sheets APBS 2026 GA
-                </h3>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  Masuk dengan Google untuk membuat atau menyambungkan otomatis file spreadsheet{' '}
-                  <span className="font-mono font-semibold text-slate-800">
-                    APBS_GA_2026_2027_Lazuardi_Database
-                  </span>{' '}
-                  di Google Drive Anda.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
-              <GoogleSignInButton
-                onClick={handleGoogleLogin}
-                disabled={isLoggingIn}
-                label={isLoggingIn ? 'Menghubungkan...' : 'Sign in with Google'}
-              />
-              <button
-                onClick={() => setDismissedAuthBanner(true)}
-                title="Sembunyikan sementara"
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
           </div>
         )}
 

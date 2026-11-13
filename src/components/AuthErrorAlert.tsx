@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { ParsedAuthError, isRunningInIframe } from '../services/googleAuth';
+import {
+  ParsedAuthError,
+  isRunningInIframe,
+  ALLOWED_EMAIL_DOMAIN,
+} from '../services/googleAuth';
 import {
   AlertCircle,
   Copy,
@@ -7,6 +11,7 @@ import {
   ExternalLink,
   X,
   ArrowRightCircle,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface AuthErrorAlertProps {
@@ -47,17 +52,23 @@ export const AuthErrorAlert: React.FC<AuthErrorAlertProps> = ({
   };
 
   return (
-    <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 shadow-2xs space-y-3">
+    <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 shadow-2xs space-y-3 text-left">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          {authErrorInfo?.isDomainRestricted ? (
+            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          )}
           <div className="space-y-1">
             <div className="font-bold text-rose-950">
-              {authErrorInfo?.isUnauthorizedDomain
-                ? 'Domain Deployment Belum Terdaftar di Firebase Auth'
-                : authErrorInfo?.isPopupBlocked
-                  ? 'Jendela Pop-up Login Diblokir Browser'
-                  : 'Koneksi Google Auth / Sheets Gagal'}
+              {authErrorInfo?.isDomainRestricted
+                ? `Akses Ditolak — Wajib Akun @${ALLOWED_EMAIL_DOMAIN}`
+                : authErrorInfo?.isUnauthorizedDomain
+                  ? 'Domain Deployment Belum Terdaftar di Firebase Auth'
+                  : authErrorInfo?.isPopupBlocked
+                    ? 'Jendela Pop-up Login Diblokir Browser'
+                    : 'Koneksi Google Auth / Sheets Gagal'}
             </div>
             <p className="text-rose-800 leading-relaxed">{syncError}</p>
           </div>
@@ -71,6 +82,17 @@ export const AuthErrorAlert: React.FC<AuthErrorAlertProps> = ({
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {authErrorInfo?.isDomainRestricted && (
+        <div className="p-3 bg-white/90 border border-rose-200 rounded-lg text-[11px] text-slate-700 leading-relaxed">
+          Silakan klik <strong>Sign in with Google</strong> lagi lalu pilih akun Google sekolah
+          Anda yang berakhiran{' '}
+          <code className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-mono font-semibold">
+            @{ALLOWED_EMAIL_DOMAIN}
+          </code>
+          .
+        </div>
+      )}
 
       {authErrorInfo?.isUnauthorizedDomain && hostname && (
         <div className="p-3 bg-white/90 border border-rose-200 rounded-lg space-y-2.5">
@@ -115,19 +137,23 @@ export const AuthErrorAlert: React.FC<AuthErrorAlertProps> = ({
         </div>
       )}
 
-      {!inIframe && onTryRedirect && (authErrorInfo?.isPopupBlocked || authErrorInfo?.code) && !authErrorInfo?.isUnauthorizedDomain && (
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          <button
-            type="button"
-            onClick={onTryRedirect}
-            disabled={isLoggingIn}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-[11px] transition-colors disabled:opacity-60"
-          >
-            <ArrowRightCircle className="w-3.5 h-3.5" />
-            <span>Login dengan Mode Redirect (Alternatif Vercel)</span>
-          </button>
-        </div>
-      )}
+      {!inIframe &&
+        onTryRedirect &&
+        (authErrorInfo?.isPopupBlocked || authErrorInfo?.code) &&
+        !authErrorInfo?.isUnauthorizedDomain &&
+        !authErrorInfo?.isDomainRestricted && (
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={onTryRedirect}
+              disabled={isLoggingIn}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-[11px] transition-colors disabled:opacity-60"
+            >
+              <ArrowRightCircle className="w-3.5 h-3.5" />
+              <span>Login dengan Mode Redirect (Alternatif Vercel)</span>
+            </button>
+          </div>
+        )}
     </div>
   );
 };

@@ -10,6 +10,7 @@ import {
   Database,
   Loader2,
   CheckCircle2,
+  LogOut,
 } from 'lucide-react';
 import { useApbs } from '../context/ApbsContext';
 import { formatRupiah } from '../utils/formatters';
@@ -31,6 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
     isSheetsConnected,
     isSyncing,
     setIsSheetsModalOpen,
+    googleUser,
+    handleGoogleLogout,
   } = useApbs();
 
   return (
@@ -143,8 +146,37 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-xs transition-colors whitespace-nowrap shrink-0"
             >
               <PlusCircle className="w-4 h-4" />
-              <span>Catat Penggunaan Dana</span>
+              <span className="hidden sm:inline">Catat Penggunaan Dana</span>
+              <span className="sm:hidden">Catat</span>
             </button>
+
+            {googleUser && (
+              <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+                {googleUser.photoURL ? (
+                  <img
+                    src={googleUser.photoURL}
+                    alt={googleUser.displayName || 'Akun Sekolah'}
+                    title={googleUser.email || ''}
+                    className="w-7 h-7 rounded-full border border-slate-200 shrink-0"
+                  />
+                ) : (
+                  <div
+                    title={googleUser.email || ''}
+                    className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center shrink-0"
+                  >
+                    {(googleUser.email?.[0] || 'L').toUpperCase()}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleGoogleLogout}
+                  title={`Keluar (${googleUser.email})`}
+                  className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

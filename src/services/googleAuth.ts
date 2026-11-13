@@ -10,6 +10,26 @@ import {
 } from 'firebase/auth';
 import defaultFirebaseConfig from '../../firebase-applet-config.json';
 
+export const ALLOWED_EMAIL_DOMAIN = 'lazuardi.sch.id';
+
+export function isAllowedSchoolEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  const parts = normalized.split('@');
+  return parts.length === 2 && parts[1] === ALLOWED_EMAIL_DOMAIN;
+}
+
+export class DomainNotAllowedError extends Error {
+  email: string;
+  constructor(email: string) {
+    super(
+      `Akses ditolak untuk akun "${email}". Aplikasi ini hanya mengizinkan akun Google sekolah dengan domain @${ALLOWED_EMAIL_DOMAIN}.`
+    );
+    this.name = 'DomainNotAllowedError';
+    this.email = email;
+  }
+}
+
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || defaultFirebaseConfig.apiKey,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || defaultFirebaseConfig.authDomain,
@@ -32,6 +52,7 @@ const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
 provider.setCustomParameters({
   prompt: 'select_account',
+  hd: ALLOWED_EMAIL_DOMAIN,
 });
 
 let isSigningIn = false;
@@ -42,16 +63,32 @@ export interface ParsedAuthError {
   message: string;
   isUnauthorizedDomain: boolean;
   isPopupBlocked: boolean;
+  isDomainRestricted: boolean;
+  rejectedEmail?: string;
   currentHostname: string;
   projectId: string;
 }
 
 export function parseFirebaseAuthError(error: unknown): ParsedAuthError {
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const projectId = firebaseConfig.projectId || '';
+
+  if (error instanceof DomainNotAllowedError) {
+    return {
+      code: 'auth/domain-not-allowed',
+      message: error.message,
+      isUnauthorizedDomain: false,
+      isPopupBlocked: false,
+      isDomainRestricted: true,
+      rejectedEmail: error.email,
+      currentHostname,
+      projectId,
+    };
+  }
+
   const errObj = error as { code?: string; message?: string };
   const code = errObj?.code || '';
   const rawMessage = errObj?.message || 'Terjadi kesalahan saat login dengan Google.';
-  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
-  const projectId = firebaseConfig.projectId || '';
 
   if (code === 'auth/unauthorized-domain' || rawMessage.includes('auth/unauthorized-domain')) {
     return {
@@ -59,6 +96,7 @@ export function parseFirebaseAuthError(error: unknown): ParsedAuthError {
       message: `Domain "${currentHostname}" belum didaftarkan di Authorized Domains Firebase Authentication (Project: ${projectId}). Tambahkan domain ini di Firebase Console agar Sign in with Google dapat berjalan di Vercel.`,
       isUnauthorizedDomain: true,
       isPopupBlocked: false,
+      isDomainRestricted: false,
       currentHostname,
       projectId,
     };
@@ -67,9 +105,11 @@ export function parseFirebaseAuthError(error: unknown): ParsedAuthError {
   if (code === 'auth/popup-blocked' || rawMessage.includes('auth/popup-blocked')) {
     return {
       code: 'auth/popup-blocked',
-      message: 'Browser memblokir jendela pop-up login Google. Izinkan pop-up untuk situs ini atau gunakan tombol Mode Redirect.',
+      message:
+        'Browser memblokir jendela pop-up login Google. Izinkan pop-up untuk situs ini atau gunakan tombol Mode Redirect.',
       isUnauthorizedDomain: false,
       isPopupBlocked: true,
+      isDomainRestricted: false,
       currentHostname,
       projectId,
     };
@@ -81,6 +121,7 @@ export function parseFirebaseAuthError(error: unknown): ParsedAuthError {
       message: 'Jendela login Google ditutup sebelum proses masuk selesai. Silakan coba lagi.',
       isUnauthorizedDomain: false,
       isPopupBlocked: false,
+      isDomainRestricted: false,
       currentHostname,
       projectId,
     };
@@ -92,6 +133,7 @@ export function parseFirebaseAuthError(error: unknown): ParsedAuthError {
       message: 'Metode login Google belum diaktifkan pada proyek Firebase Authentication Anda.',
       isUnauthorizedDomain: false,
       isPopupBlocked: false,
+      isDomainRestricted: false,
       currentHostname,
       projectId,
     };
@@ -102,6 +144,7 @@ export function parseFirebaseAuthError(error: unknown): ParsedAuthError {
     message: rawMessage,
     isUnauthorizedDomain: false,
     isPopupBlocked: false,
+    isDomainRestricted: false,
     currentHostname,
     projectId,
   };
@@ -122,6 +165,14 @@ export const checkRedirectAuthResult = async (): Promise<{
   try {
     const result = await getRedirectResult(auth);
     if (!result) return null;
+
+    if (!isAllowedSchoolEmail(result.user.email)) {
+      const rejected = result.user.email || 'Akun tidak diketahui';
+      cachedAccessToken = null;
+      await auth.signOut();
+      throw new DomainNotAllowedError(rejected);
+    }
+
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) return null;
     cachedAccessToken = credential.accessToken;
@@ -134,10 +185,18 @@ export const checkRedirectAuthResult = async (): Promise<{
 
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
-  onAuthFailure?: (user: User | null) => void
+  onAuthFailure?: (user: User | null, rejectedEmail?: string) => void
 ) => {
-  return onAuthStateChanged(auth, (user: User | null) => {
+  return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
+      if (!isAllowedSchoolEmail(user.email)) {
+        const rejected = user.email || '';
+        cachedAccessToken = null;
+        await auth.signOut();
+        if (onAuthFailure) onAuthFailure(null, rejected);
+        return;
+      }
+
       if (cachedAccessToken) {
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
       } else if (!isSigningIn) {
@@ -158,6 +217,14 @@ export const googleSignIn = async (): Promise<{
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
+
+    if (!isAllowedSchoolEmail(result.user.email)) {
+      const rejected = result.user.email || 'Akun tidak diketahui';
+      cachedAccessToken = null;
+      await auth.signOut();
+      throw new DomainNotAllowedError(rejected);
+    }
+
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
       throw new Error('Gagal mendapatkan akses token Google Workspace');

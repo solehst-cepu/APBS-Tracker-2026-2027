@@ -1,3 +1,43 @@
+export type FormRequestType = 'Pengajuan Dana Kegiatan' | 'Klaim/Laporan Pengeluaran';
+export type DisbursementMethod = 'Tunai' | 'Transfer' | 'Lainnya';
+
+export const TEMPLATE_ENTITIES = [
+  'ASEO',
+  'CRM',
+  'HRD',
+  'LAZMART',
+  'LIBRARY',
+  'Direktorat',
+  'Panitia',
+  'PELANGI',
+  'SD',
+  'SMP',
+] as const;
+
+export interface PengajuanDanaApprovers {
+  kepUnit: string;
+  depKeuangan: string;
+  deputyGm: string;
+  direktorat: string;
+}
+
+export interface PengajuanDanaMetadata {
+  formType?: FormRequestType;
+  referenceNo?: string;
+  executionDate?: string; // YYYY-MM-DD (Tgl Pelaksanaan)
+  unitHead?: string; // Kepala Unit (default: Soleh Sohibudin)
+  department?: string; // Department / Unit (e.g. Umum)
+  purpose?: string; // Tujuan Permintaan Dana/Laporan
+  disbursementMethod?: DisbursementMethod; // Tunai | Transfer | Lainnya
+  checkedEntities?: string[];
+  isApbs?: boolean;
+  saldoDiterima?: number;
+  sisaDikembalikanMethod?: 'Tunai' | 'Transfer';
+  saldoAwalSnapshot?: number;
+  saldoAkhirSnapshot?: number;
+  approvers?: PengajuanDanaApprovers;
+}
+
 export interface ApbsBudgetItem {
   id: string;
   code: string;
@@ -30,6 +70,7 @@ export interface ExpenseTransaction {
   pic: string;
   description: string;
   paymentMethod?: 'Kas GA' | 'Transfer Bank' | 'Reimbursement' | 'Petty Cash';
+  formMeta?: PengajuanDanaMetadata;
   createdAt: string;
 }
 
