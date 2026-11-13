@@ -6,6 +6,10 @@ import { INITIAL_TRANSACTIONS } from '../data/sampleTransactions';
 import {
   initAuth,
   googleSignIn,
+  googleSignInRedirect,
+  checkRedirectAuthResult,
+  parseFirebaseAuthError,
+  ParsedAuthError,
   logout as googleLogout,
   clearAccessToken,
 } from '../services/googleAuth';
@@ -88,6 +92,8 @@ interface ApbsContextType {
   isSyncing: boolean;
   lastSyncedAt: string | null;
   syncError: string | null;
+  authErrorInfo: ParsedAuthError | null;
+  clearSyncError: () => void;
   syncNotice: string | null;
   clearSyncNotice: () => void;
   isSheetsModalOpen: boolean;
@@ -95,6 +101,7 @@ interface ApbsContextType {
   pendingSheetConfirm: PendingSheetConfirmation | null;
   closePendingSheetConfirm: () => void;
   handleGoogleLogin: () => Promise<void>;
+  handleGoogleLoginRedirect: () => Promise<void>;
   handleGoogleLogout: () => Promise<void>;
   requestCreateSheetsDb: () => void;
   requestPushAllToSheets: () => void;
@@ -168,6 +175,7 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [authErrorInfo, setAuthErrorInfo] = useState<ParsedAuthError | null>(null);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState<boolean>(false);
   const [pendingSheetConfirm, setPendingSheetConfirm] =
@@ -175,7 +183,7 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const isSheetsConnected = Boolean(accessToken && spreadsheetInfo && !needsAuth);
 
-  // Initialize Firebase Auth listener
+  // Initialize Firebase Auth listener & check pending redirect sign-in result
   useEffect(() => {
     const unsub = initAuth(
       (user, token) => {
@@ -189,7 +197,32 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setNeedsAuth(true);
       }
     );
-    return () => unsub();
+
+    let isMounted = true;
+    (async () => {
+      try {
+        const redirectRes = await checkRedirectAuthResult();
+        if (isMounted && redirectRes) {
+          setGoogleUser(redirectRes.user);
+          setAccessToken(redirectRes.accessToken);
+          setNeedsAuth(false);
+          setAuthErrorInfo(null);
+          setSyncError(null);
+          await autoDiscoverAndConnect(redirectRes.accessToken, redirectRes.user.email);
+        }
+      } catch (err) {
+        if (isMounted) {
+          const parsed = parseFirebaseAuthError(err);
+          setAuthErrorInfo(parsed);
+          setSyncError(parsed.message);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, []);
 
   // Persist items locally as offline cache
@@ -288,9 +321,15 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const clearSyncError = () => {
+    setSyncError(null);
+    setAuthErrorInfo(null);
+  };
+
   const handleGoogleLogin = async () => {
     setIsLoggingIn(true);
     setSyncError(null);
+    setAuthErrorInfo(null);
     try {
       const res = await googleSignIn();
       if (res) {
@@ -300,12 +339,24 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await autoDiscoverAndConnect(res.accessToken, res.user.email);
       }
     } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'Login Google dibatalkan atau gagal. Silakan coba lagi.';
-      setSyncError(msg);
+      const parsed = parseFirebaseAuthError(err);
+      setAuthErrorInfo(parsed);
+      setSyncError(parsed.message);
     } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleGoogleLoginRedirect = async () => {
+    setIsLoggingIn(true);
+    setSyncError(null);
+    setAuthErrorInfo(null);
+    try {
+      await googleSignInRedirect();
+    } catch (err) {
+      const parsed = parseFirebaseAuthError(err);
+      setAuthErrorInfo(parsed);
+      setSyncError(parsed.message);
       setIsLoggingIn(false);
     }
   };
@@ -961,6 +1012,8 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isSyncing,
         lastSyncedAt,
         syncError,
+        authErrorInfo,
+        clearSyncError,
         syncNotice,
         clearSyncNotice: () => setSyncNotice(null),
         isSheetsModalOpen,
@@ -968,6 +1021,7 @@ export const ApbsProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         pendingSheetConfirm,
         closePendingSheetConfirm: () => setPendingSheetConfirm(null),
         handleGoogleLogin,
+        handleGoogleLoginRedirect,
         handleGoogleLogout,
         requestCreateSheetsDb,
         requestPushAllToSheets,

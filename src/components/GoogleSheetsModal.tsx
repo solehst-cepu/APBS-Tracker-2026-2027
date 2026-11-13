@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useApbs } from '../context/ApbsContext';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import { AuthErrorAlert } from './AuthErrorAlert';
 import { DB_SPREADSHEET_TITLE } from '../services/googleSheetsDb';
+import { isRunningInIframe } from '../services/googleAuth';
 import {
   X,
   FileSpreadsheet,
@@ -11,7 +13,6 @@ import {
   DownloadCloud,
   Link2,
   CheckCircle2,
-  AlertCircle,
   LogOut,
   Plus,
   Loader2,
@@ -30,7 +31,10 @@ export const GoogleSheetsModal: React.FC = () => {
     isSyncing,
     lastSyncedAt,
     syncError,
+    authErrorInfo,
+    clearSyncError,
     handleGoogleLogin,
+    handleGoogleLoginRedirect,
     handleGoogleLogout,
     requestCreateSheetsDb,
     requestPushAllToSheets,
@@ -80,12 +84,13 @@ export const GoogleSheetsModal: React.FC = () => {
 
         <div className="mt-5 space-y-5 text-xs">
           {/* Error Banner */}
-          {syncError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div className="flex-1">{syncError}</div>
-            </div>
-          )}
+          <AuthErrorAlert
+            syncError={syncError}
+            authErrorInfo={authErrorInfo}
+            onDismiss={clearSyncError}
+            onTryRedirect={handleGoogleLoginRedirect}
+            isLoggingIn={isLoggingIn}
+          />
 
           {/* Section 1: Authentication */}
           {needsAuth ? (
@@ -105,12 +110,22 @@ export const GoogleSheetsModal: React.FC = () => {
                   di Google Drive Anda.
                 </p>
               </div>
-              <div className="flex justify-center pt-1">
+              <div className="flex flex-col items-center gap-2 pt-1">
                 <GoogleSignInButton
                   onClick={handleGoogleLogin}
                   disabled={isLoggingIn}
                   label={isLoggingIn ? 'Menghubungkan...' : 'Sign in with Google'}
                 />
+                {!isRunningInIframe() && (
+                  <button
+                    type="button"
+                    onClick={handleGoogleLoginRedirect}
+                    disabled={isLoggingIn}
+                    className="text-[11px] font-medium text-slate-500 hover:text-emerald-700 underline underline-offset-2"
+                  >
+                    Pop-up terblokir? Masuk dengan mode Redirect
+                  </button>
+                )}
               </div>
               <div className="text-[11px] text-slate-400">
                 Struktur database otomatis: Tab <span className="font-mono">Ringkasan_Dashboard</span>,{' '}

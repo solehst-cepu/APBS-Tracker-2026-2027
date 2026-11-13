@@ -9,6 +9,7 @@ import { RecordExpenseModal } from './components/RecordExpenseModal';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { GoogleSheetsConfirmModal } from './components/GoogleSheetsConfirmModal';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
+import { AuthErrorAlert } from './components/AuthErrorAlert';
 import { ViewTab } from './types/apbs';
 import { CheckCircle2, X, FileSpreadsheet, ExternalLink } from 'lucide-react';
 
@@ -23,8 +24,12 @@ const AppContent: React.FC = () => {
     needsAuth,
     isLoggingIn,
     handleGoogleLogin,
+    handleGoogleLoginRedirect,
     isSheetsConnected,
     spreadsheetInfo,
+    syncError,
+    authErrorInfo,
+    clearSyncError,
     syncNotice,
     clearSyncNotice,
     setIsSheetsModalOpen,
@@ -54,6 +59,15 @@ const AppContent: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+        {/* Google Auth / Sheets Error Alert (always visible on main screen) */}
+        <AuthErrorAlert
+          syncError={syncError}
+          authErrorInfo={authErrorInfo}
+          onDismiss={clearSyncError}
+          onTryRedirect={handleGoogleLoginRedirect}
+          isLoggingIn={isLoggingIn}
+        />
+
         {/* Google Sheets Sync Notice Toast */}
         {syncNotice && (
           <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 text-xs text-emerald-900 shadow-2xs">
