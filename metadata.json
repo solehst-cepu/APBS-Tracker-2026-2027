@@ -1,0 +1,6 @@
+{
+  "name": "APBS 2026 GA Tracker - Lazuardi GCS",
+  "description": "Sistem Manajemen Anggaran Pendapatan & Belanja Sekolah (APBS) TA 2026-2027 Team General Affairs (GA) Lazuardi GCS Cinere dengan pelacakan realisasi dana real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
